@@ -1,6 +1,9 @@
 name: Beta Release
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "beta-*"
 jobs:
   release:
     runs-on: windows-latest

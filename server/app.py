@@ -37,13 +37,15 @@ def init():
  os.makedirs(os.path.dirname(DB),exist_ok=True);os.makedirs(BACKUPS,exist_ok=True)
  with con() as c:
   c.executescript(open(SCHEMA,encoding="utf-8").read())
+  ucols={x["name"] for x in c.execute("pragma table_info(users)")}
+  if "must_change_password" not in ucols:c.execute("alter table users add column must_change_password INTEGER NOT NULL DEFAULT 0")
   cols={x["name"] for x in c.execute("pragma table_info(patients)")}
   for name,sqltype,default in [("paid_amount","REAL","0"),("remaining_amount","REAL","0"),("payment_method","TEXT","\'Cash\'")]:
    if name not in cols:c.execute(f"alter table patients add column {name} {sqltype} default {default}")
   for p in ["patient_edit","booking_manage","export","view_financial"]:
    c.execute("insert or ignore into role_permissions(role,permission,allowed) values(?,?,1)",("user",p))
   if not c.execute("select count(*) from users").fetchone()[0]:
-   c.execute("insert into users(username,password_hash,role) values(?,?,?)",("admin",hp("admin123"),"admin"))
+   c.execute("insert into users(username,password_hash,role,must_change_password) values(?,?,?,1)",("admin",hp("admin123"),"admin"))
 
 def lan_ip():
  try:
@@ -61,14 +63,24 @@ def login():
  with con() as c:
   r=c.execute("select * from users where username=? and active=1",(d.get("username"),)).fetchone()
   if not r or not vp(d.get("password",""),r["password_hash"]):return jsonify(error="invalid credentials"),401
-  t=secrets.token_urlsafe(32);TOKENS[t]={"id":r["id"],"username":r["username"],"role":r["role"]}
+  t=secrets.token_urlsafe(32);TOKENS[t]={"id":r["id"],"username":r["username"],"role":r["role"],"must_change_password":bool(r["must_change_password"])}
   c.execute("update users set last_login=CURRENT_TIMESTAMP where id=?",(r["id"],));return jsonify(token=t,user=TOKENS[t])
+@app.post("/api/change-password")
+def changepassword():
+ u=user();d=request.json or {};old=d.get("current_password","");new=d.get("new_password","")
+ if len(new)<8:return jsonify(error="new password must be at least 8 characters"),422
+ with con() as c:
+  r=c.execute("select password_hash from users where id=?",(u["id"],)).fetchone()
+  if not r or not vp(old,r["password_hash"]):return jsonify(error="current password is incorrect"),403
+  c.execute("update users set password_hash=?,must_change_password=0 where id=?",(hp(new),u["id"]))
+ u["must_change_password"]=False
+ return jsonify(ok=True)
 @app.post("/api/logout")
 def logout(): TOKENS.pop(request.headers.get("Authorization","").replace("Bearer ",""),None);return jsonify(ok=True)
 @app.get("/api/users")
 def users():
  if not admin():return jsonify(error="admin required"),403
- with con() as c:return jsonify([dict(x) for x in c.execute("select id,username,role,active,last_login,created_at from users order by username")])
+ with con() as c:return jsonify([dict(x) for x in c.execute("select id,username,role,active,last_login,must_change_password,created_at from users order by username")])
 @app.post("/api/users")
 def adduser():
  if not admin():return jsonify(error="admin required"),403
@@ -350,7 +362,9 @@ def edituser(i):
  if not admin():return jsonify(error="admin required"),403
  d=request.json or {}
  with con() as c:
-  if "password" in d and d["password"]:c.execute("update users set password_hash=? where id=?",(hp(d["password"]),i))
+  if "password" in d and d["password"]:
+   if len(d["password"])<8:return jsonify(error="password must be at least 8 characters"),422
+   c.execute("update users set password_hash=?,must_change_password=1 where id=?",(hp(d["password"]),i))
   if "role" in d:c.execute("update users set role=? where id=?",(d["role"],i))
   if "active" in d:c.execute("update users set active=? where id=?",(int(bool(d["active"])),i))
  return jsonify(ok=True)

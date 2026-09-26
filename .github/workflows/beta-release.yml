@@ -1,0 +1,31 @@
+name: Beta Release
+on:
+  workflow_dispatch:
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: phase-5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Smoke tests
+        run: python tests/smoke_test.py
+      - name: Build portable EXE
+        run: pyinstaller --noconfirm --clean --onefile --name FayoumScanRIS-Beta --add-data "web;web" --add-data "server/schema.sql;server" server/app.py
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release
+          Copy-Item dist/FayoumScanRIS-Beta.exe release/
+          Copy-Item START_SERVER.bat release/
+          Compress-Archive -Path release/* -DestinationPath FayoumScanRIS-Beta-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FayoumScanRIS-Beta-Windows-x64
+          path: FayoumScanRIS-Beta-Windows-x64.zip

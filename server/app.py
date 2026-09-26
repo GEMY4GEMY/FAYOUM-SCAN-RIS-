@@ -25,6 +25,9 @@ def init():
  os.makedirs(os.path.dirname(DB),exist_ok=True);os.makedirs(BACKUPS,exist_ok=True)
  with con() as c:
   c.executescript(open(SCHEMA,encoding="utf-8").read())
+  cols={x["name"] for x in c.execute("pragma table_info(patients)")}
+  for name,sqltype,default in [("paid_amount","REAL","0"),("remaining_amount","REAL","0"),("payment_method","TEXT","\'Cash\'")]:
+   if name not in cols:c.execute(f"alter table patients add column {name} {sqltype} default {default}")
   if not c.execute("select count(*) from users").fetchone()[0]:
    c.execute("insert into users(username,password_hash,role) values(?,?,?)",("admin",hp("admin123"),"admin"))
 
@@ -107,13 +110,13 @@ def patients():
  with con() as c:return jsonify([dict(x) for x in c.execute(q+" order by id desc limit 3000",a)])
 @app.post("/api/patients")
 def patientadd():
- d=request.json or {}; cols=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","doctor","notes","username","unit","case_date","timestamp","price_plan_id","price_plan_item_id","price_snapshot"]
+ d=request.json or {}; cols=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","username","unit","case_date","timestamp","price_plan_id","price_plan_item_id","price_snapshot"]
  with con() as c:
   r=c.execute(f"insert into patients({','.join(cols)}) values({','.join(['?']*len(cols))})",[d.get(k) for k in cols])
   c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",(d.get("username"),"CREATE","patient",r.lastrowid,json.dumps(d,ensure_ascii=False)));return jsonify(id=r.lastrowid),201
 @app.put("/api/patients/<int:i>")
 def patientedit(i):
- d=request.json or {};expected=int(d.get("row_version",1));u=user();allowed=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","doctor","notes","unit","case_date"]
+ d=request.json or {};expected=int(d.get("row_version",1));u=user();allowed=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","unit","case_date"]
  with con() as c:
   old=c.execute("select * from patients where id=?",(i,)).fetchone()
   if not old:return jsonify(error="patient not found"),404
@@ -241,6 +244,25 @@ def importplan(pid):
   if not c.execute("select 1 from price_plans where id=?",(pid,)).fetchone():return jsonify(error="plan not found"),404
   for x in parsed:c.execute("insert into price_plan_items(price_plan_id,exam_id,price,coverage_percentage,active) values(?,?,?,?,?) on conflict(price_plan_id,exam_id) do update set price=excluded.price,coverage_percentage=excluded.coverage_percentage,active=excluded.active",x)
  return jsonify(ok=True,imported=len(parsed))
+@app.get("/api/settings")
+def getsettings():
+ with con() as c:return jsonify({x["key"]:x["value"] for x in c.execute("select key,value from settings")})
+@app.put("/api/settings")
+def putsettings():
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ with con() as c:
+  for k,v in d.items():c.execute("insert into settings(key,value) values(?,?) on conflict(key) do update set value=excluded.value",(k,str(v)))
+ return jsonify(ok=True)
+@app.put("/api/users/<int:i>")
+def edituser(i):
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ with con() as c:
+  if "password" in d and d["password"]:c.execute("update users set password_hash=? where id=?",(hp(d["password"]),i))
+  if "role" in d:c.execute("update users set role=? where id=?",(d["role"],i))
+  if "active" in d:c.execute("update users set active=? where id=?",(int(bool(d["active"])),i))
+ return jsonify(ok=True)
 @app.get("/api/audit")
 def audit():
  if not admin():return jsonify(error="admin required"),403

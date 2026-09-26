@@ -120,6 +120,20 @@ def addplan():
  if not admin():return jsonify(error="admin required"),403
  d=request.json or {}
  with con() as c:r=c.execute("insert into price_plans(payment_type_id,name,version,valid_from,valid_to,active) values(?,?,?,?,?,?)",(d["payment_type_id"],d["name"],int(d.get("version",1)),d["valid_from"],d.get("valid_to"),int(d.get("active",1))));return jsonify(id=r.lastrowid),201
+@app.put("/api/price-plans/<int:pid>")
+def editplan(pid):
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ with con() as c:
+  old=c.execute("select * from price_plans where id=?",(pid,)).fetchone()
+  if not old:return jsonify(error="price plan not found"),404
+  c.execute("update price_plans set payment_type_id=?,name=?,version=?,valid_from=?,valid_to=?,active=? where id=?",(int(d.get("payment_type_id",old["payment_type_id"])),d.get("name",old["name"]),int(d.get("version",old["version"])),d.get("valid_from",old["valid_from"]),d.get("valid_to",old["valid_to"]),int(d.get("active",old["active"])),pid))
+ return jsonify(ok=True)
+@app.get("/api/price-plans/<int:pid>/items")
+def planitems(pid):
+ with con() as c:
+  if not c.execute("select 1 from price_plans where id=?",(pid,)).fetchone():return jsonify(error="price plan not found"),404
+  return jsonify([dict(x) for x in c.execute("select i.*,e.unit,e.name exam_name from price_plan_items i join exams e on e.id=i.exam_id where i.price_plan_id=? order by e.unit,e.name",(pid,))])
 @app.post("/api/price-plans/<int:pid>/items")
 def planitem(pid):
  if not admin():return jsonify(error="admin required"),403

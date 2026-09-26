@@ -157,6 +157,37 @@ def appts():
 def apptadd():
  d=request.json or {};u=user();cols=["patient_name","phone","payment_type","unit","exam","appointment_date","appointment_time","period","doctor","notes","status","created_by","updated_by"];v=[d.get(k) for k in cols];v[10]=v[10] or "Booked";v[11]=v[11] or (u["username"] if u else "");v[12]=v[11]
  with con() as c:r=c.execute(f"insert into appointments({','.join(cols)}) values({','.join(['?']*len(cols))})",v);return jsonify(id=r.lastrowid),201
+@app.put("/api/appointments/<int:i>")
+def apptedit(i):
+ d=request.json or {};u=user();expected=int(d.get("row_version",1));allowed=["patient_name","phone","payment_type","unit","exam","appointment_date","appointment_time","period","doctor","notes","status"]
+ with con() as c:
+  old=c.execute("select * from appointments where id=?",(i,)).fetchone()
+  if not old:return jsonify(error="appointment not found"),404
+  vals=[d.get(k,old[k]) for k in allowed]+[((u or {}).get("username")),i,expected]
+  cur=c.execute("update appointments set "+",".join(k+"=?" for k in allowed)+",updated_by=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
+  if not cur.rowcount:return jsonify(error="appointment changed by another user"),409
+  c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data,new_data) values(?,?,?,?,?,?)",((u or {}).get("username"),"UPDATE","appointment",i,json.dumps(dict(old),ensure_ascii=False),json.dumps(d,ensure_ascii=False)))
+ return jsonify(ok=True)
+@app.post("/api/appointments/<int:i>/convert")
+def apptconvert(i):
+ u=user()
+ with con() as c:
+  a=c.execute("select * from appointments where id=?",(i,)).fetchone()
+  if not a:return jsonify(error="appointment not found"),404
+  if a["converted_patient_id"]:return jsonify(error="already converted",patient_id=a["converted_patient_id"]),409
+  r=c.execute("insert into patients(name,payment_type,phone,exam,exam_price,coverage_percentage,coverage_amount,additional_fees,discount,total_amount,doctor,notes,username,unit,case_date,timestamp) values(?,?,?,?,0,0,0,0,0,0,?,?,?,?,?,?)",(a["patient_name"],a["payment_type"] or "",a["phone"],a["exam"] or "",a["doctor"] or "",a["notes"] or "",(u or {}).get("username"),a["unit"],a["appointment_date"],datetime.now().isoformat()))
+  c.execute("update appointments set status='Converted',converted_patient_id=?,updated_by=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=?",(r.lastrowid,(u or {}).get("username"),i))
+  c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",((u or {}).get("username"),"CONVERT","appointment",i,json.dumps({"patient_id":r.lastrowid})))
+ return jsonify(ok=True,patient_id=r.lastrowid)
+@app.delete("/api/appointments/<int:i>")
+def apptdelete(i):
+ a=admin()
+ if not a:return jsonify(error="admin required"),403
+ with con() as c:
+  old=c.execute("select * from appointments where id=?",(i,)).fetchone()
+  if not old:return jsonify(error="appointment not found"),404
+  c.execute("delete from appointments where id=?",(i,));c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data) values(?,?,?,?,?)",(a["username"],"DELETE","appointment",i,json.dumps(dict(old),ensure_ascii=False)))
+ return jsonify(ok=True)
 @app.get("/api/audit")
 def audit():
  if not admin():return jsonify(error="admin required"),403

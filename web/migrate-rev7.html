@@ -1,0 +1,8 @@
+<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><title>REV.7 Migration</title>
+<style>body{font-family:Segoe UI;max-width:900px;margin:40px auto;padding:20px}button,input{padding:10px;margin:5px}pre{background:#eee;padding:15px;white-space:pre-wrap}</style>
+<h2>FAYOUM SCAN RIS — نقل بيانات REV.7</h2>
+<p>افتح هذه الصفحة من نفس السيرفر بعد تشغيل النسخة الجديدة. الصفحة تقرأ قاعدة IndexedDB القديمة من نفس المتصفح وترسل المرضى والفحوصات وجهات التعامل للسيرفر المركزي.</p>
+<input id="user" value="admin"><input id="pass" type="password" placeholder="Admin password"><button onclick="go()">بدء النقل</button><pre id="out"></pre>
+<script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script><script>
+async function go(){try{out.textContent="جاري القراءة...";let db=new Dexie("FayoumScanDB_v3");db.version(1).stores({patients:"++id",exams:"++id",paymentTypes:"++id",users:"++id",settings:"key",backups:"++id"});await db.open();let [patients,exams,paymentTypes]=await Promise.all([db.patients.toArray(),db.exams.toArray(),db.paymentTypes.toArray()]);let l=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user.value,password:pass.value})});let x=await l.json();if(!l.ok)throw Error(x.error);let r=await fetch("/api/migration/rev7",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+x.token},body:JSON.stringify({patients,exams,paymentTypes})});let z=await r.json();out.textContent=JSON.stringify(z,null,2)}catch(e){out.textContent="ERROR: "+e.message}}
+</script>

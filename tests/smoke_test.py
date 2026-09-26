@@ -32,6 +32,10 @@ r=c.post(f"/api/price-plans/{planid}/items",headers=H,json={"exam_id":examid,"pr
 r=c.get("/api/pricing/resolve?payment_type=TEST%20CONTRACT&exam=TEST%20CT&date=2026-09-26",headers=H);ok(r); pricing=r.get_json();assert pricing["found"] and pricing["price"]==800 and pricing["coverage_percentage"]==25
 r=c.get(f"/api/price-plans/{planid}/items",headers=H);ok(r);assert len(r.get_json())==1
 r=c.post("/api/appointments",headers=H,json={"patient_name":"PRICED BOOKING","phone":"01222222222","payment_type":"TEST CONTRACT","unit":"CT","exam":"TEST CT","appointment_date":"2026-09-28","status":"Booked"});ok(r); apid=r.get_json()["id"]
+r=c.get("/api/appointments?date=2026-09-28",headers=H);ok(r); arow=next(x for x in r.get_json() if x["id"]==apid); oldver=arow["row_version"]
+r=c.put(f"/api/appointments/{apid}",headers=H,json={"appointment_time":"11:30","row_version":oldver});ok(r)
+r=c.put(f"/api/appointments/{apid}",headers=H,json={"appointment_time":"12:00","row_version":oldver});ok(r,409)
+r=c.get("/api/appointments?date=2026-09-28",headers=H);ok(r); arow=next(x for x in r.get_json() if x["id"]==apid); assert arow["appointment_time"]=="11:30"
 r=c.post(f"/api/appointments/{apid}/convert",headers=H);ok(r); converted=r.get_json()["patient_id"]
 r=c.get("/api/patients?date=2026-09-28",headers=H);ok(r); prow=next(x for x in r.get_json() if x["id"]==converted);assert prow["exam_price"]==800 and prow["coverage_percentage"]==25 and prow["coverage_amount"]==200 and prow["total_amount"]==600 and prow["remaining_amount"]==600 and prow["price_plan_id"]==planid
 

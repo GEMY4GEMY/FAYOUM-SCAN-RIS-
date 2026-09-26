@@ -240,9 +240,16 @@ def apptconvert(i):
   a=c.execute("select * from appointments where id=?",(i,)).fetchone()
   if not a:return jsonify(error="appointment not found"),404
   if a["converted_patient_id"]:return jsonify(error="already converted",patient_id=a["converted_patient_id"]),409
-  r=c.execute("insert into patients(name,payment_type,phone,exam,exam_price,coverage_percentage,coverage_amount,additional_fees,discount,total_amount,doctor,notes,username,unit,case_date,timestamp) values(?,?,?,?,0,0,0,0,0,0,?,?,?,?,?,?)",(a["patient_name"],a["payment_type"] or "",a["phone"],a["exam"] or "",a["doctor"] or "",a["notes"] or "",(u or {}).get("username"),a["unit"],a["appointment_date"],datetime.now().isoformat()))
+  pt=a["payment_type"] or ""; ex=a["exam"] or ""; day=a["appointment_date"]
+  pr=c.execute("select i.id item_id,p.id plan_id,p.name plan_name,p.version,i.price,i.coverage_percentage from price_plan_items i join price_plans p on p.id=i.price_plan_id join payment_types t on t.id=p.payment_type_id join exams e on e.id=i.exam_id where t.name=? and e.name=? and p.active=1 and i.active=1 and p.valid_from<=? and (p.valid_to is null or p.valid_to='' or p.valid_to>=?) order by p.version desc,p.id desc limit 1",(pt,ex,day,day)).fetchone()
+  if pr: price=float(pr["price"] or 0);cov=float(pr["coverage_percentage"] or 0);plan_id=pr["plan_id"];item_id=pr["item_id"];plan_name=pr["plan_name"];plan_version=pr["version"]
+  else:
+   er=c.execute("select id,base_price from exams where name=? and unit=? and active=1 order by id desc limit 1",(ex,a["unit"])).fetchone();price=float(er["base_price"] or 0) if er else 0;cov=0;plan_id=None;item_id=None;plan_name=None;plan_version=None
+  covamt=price*cov/100;total=max(0,price-covamt)
+  snap=json.dumps({"price":price,"coverage_percentage":cov,"coverage_amount":covamt,"additional_fees":0,"discount":0,"total_amount":total,"plan_id":plan_id,"item_id":item_id,"plan_name":plan_name,"plan_version":plan_version,"payment_type":pt,"exam":ex,"source":"appointment_conversion","captured_at":datetime.now().isoformat()},ensure_ascii=False)
+  r=c.execute("insert into patients(name,payment_type,phone,exam,exam_price,coverage_percentage,coverage_amount,additional_fees,discount,total_amount,paid_amount,remaining_amount,payment_method,doctor,notes,username,unit,case_date,timestamp,price_plan_id,price_plan_item_id,price_snapshot) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(a["patient_name"],pt,a["phone"],ex,price,cov,covamt,0,0,total,0,total,"Contract" if pt else "Cash",a["doctor"] or "",a["notes"] or "",(u or {}).get("username"),a["unit"],day,datetime.now().isoformat(),plan_id,item_id,snap))
   c.execute("update appointments set status='Converted',converted_patient_id=?,updated_by=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=?",(r.lastrowid,(u or {}).get("username"),i))
-  c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",((u or {}).get("username"),"CONVERT","appointment",i,json.dumps({"patient_id":r.lastrowid})))
+  c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",((u or {}).get("username"),"CONVERT","appointment",i,json.dumps({"patient_id":r.lastrowid,"price":price,"coverage_percentage":cov,"total_amount":total,"price_plan_id":plan_id},ensure_ascii=False)))
  return jsonify(ok=True,patient_id=r.lastrowid)
 @app.delete("/api/appointments/<int:i>")
 def apptdelete(i):

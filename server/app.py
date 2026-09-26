@@ -1,5 +1,5 @@
 from flask import Flask,request,jsonify,send_from_directory,send_file
-import sqlite3,os,sys,secrets,hashlib,json,shutil
+import sqlite3,os,sys,secrets,hashlib,json,shutil,socket
 from datetime import datetime
 from io import BytesIO
 from openpyxl import Workbook,load_workbook
@@ -39,9 +39,16 @@ def init():
   if not c.execute("select count(*) from users").fetchone()[0]:
    c.execute("insert into users(username,password_hash,role) values(?,?,?)",("admin",hp("admin123"),"admin"))
 
+def lan_ip():
+ try:
+  sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);sock.connect(("8.8.8.8",80));ip=sock.getsockname()[0];sock.close();return ip
+ except:
+  try:return socket.gethostbyname(socket.gethostname())
+  except:return "127.0.0.1"
 @app.get("/api/health")
 def health():
- with con() as c:return jsonify(ok=True,server="FAYOUM SCAN RIS Phase 5",patients=c.execute("select count(*) from patients").fetchone()[0])
+ port=int(os.getenv("PORT","8787"));ip=lan_ip()
+ with con() as c:return jsonify(ok=True,server="FAYOUM SCAN RIS",version="Beta 0.5",patients=c.execute("select count(*) from patients").fetchone()[0],lan_ip=ip,lan_url=f"http://{ip}:{port}",local_url=f"http://127.0.0.1:{port}")
 @app.post("/api/login")
 def login():
  d=request.json or {}

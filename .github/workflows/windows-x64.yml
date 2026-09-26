@@ -1,0 +1,33 @@
+name: Build Windows x64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ phase-5, main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Syntax check
+        run: python -m py_compile server/app.py
+      - name: Build portable server
+        shell: cmd
+        run: >
+          pyinstaller --noconfirm --clean --onefile
+          --name FayoumScanRIS-Server
+          --add-data "web;web"
+          --add-data "server/schema.sql;server"
+          server/app.py
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FayoumScanRIS-Windows-x64
+          path: dist/FayoumScanRIS-Server.exe
+          if-no-files-found: error

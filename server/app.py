@@ -124,12 +124,12 @@ def patientadd():
 @app.put("/api/patients/<int:i>")
 def patientedit(i):
  if not allowed("patient_edit"):return jsonify(error="permission denied"),403
- d=request.json or {};expected=int(d.get("row_version",1));u=user();allowed=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","unit","case_date"]
+ d=request.json or {};expected=int(d.get("row_version",1));u=user();editable_fields=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","unit","case_date"]
  with con() as c:
   old=c.execute("select * from patients where id=?",(i,)).fetchone()
   if not old:return jsonify(error="patient not found"),404
-  vals=[d.get(k,old[k]) for k in allowed]+[((u or {}).get("username") or d.get("username")),i,expected]
-  cur=c.execute("update patients set "+",".join(k+"=?" for k in allowed)+",username=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
+  vals=[d.get(k,old[k]) for k in editable_fields]+[((u or {}).get("username") or d.get("username")),i,expected]
+  cur=c.execute("update patients set "+",".join(k+"=?" for k in editable_fields)+",username=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
   if not cur.rowcount:return jsonify(error="record changed by another user"),409
   c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data,new_data) values(?,?,?,?,?,?)",((u or {}).get("username"),"UPDATE","patient",i,json.dumps(dict(old),ensure_ascii=False),json.dumps(d,ensure_ascii=False)))
  return jsonify(ok=True)

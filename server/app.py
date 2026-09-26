@@ -168,6 +168,16 @@ def resolve():
   if r:return jsonify(found=True,**dict(r))
   e=c.execute("select base_price from exams where name=? and active=1 order by id desc limit 1",(ex,)).fetchone()
   return jsonify(found=False,price=(e["base_price"] if e else 0),coverage_percentage=0)
+def normalize_finance(d,base=None):
+ base=base or {}
+ def num(k,default=0):
+  try:return float(d.get(k,base.get(k,default)) or 0)
+  except:return float(default)
+ price=max(0,num("exam_price"));cov=min(100,max(0,num("coverage_percentage")));fees=max(0,num("additional_fees"));disc=max(0,num("discount"));paid=max(0,num("paid_amount"))
+ coverage=round(price*cov/100,2);total=round(max(0,price-coverage+fees-disc),2);remaining=round(max(0,total-paid),2)
+ d.update(exam_price=price,coverage_percentage=cov,coverage_amount=coverage,additional_fees=fees,discount=disc,total_amount=total,paid_amount=paid,remaining_amount=remaining)
+ return d
+
 @app.get("/api/patients")
 def patients():
  q="select * from patients where 1=1";a=[]
@@ -179,7 +189,7 @@ def patients():
  with con() as c:return jsonify([dict(x) for x in c.execute(q+" order by id desc limit 3000",a)])
 @app.post("/api/patients")
 def patientadd():
- d=request.json or {}; cols=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","username","unit","case_date","timestamp","price_plan_id","price_plan_item_id","price_snapshot"]
+ d=normalize_finance(request.json or {});u=user();d["username"]=(u or {}).get("username"); cols=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","username","unit","case_date","timestamp","price_plan_id","price_plan_item_id","price_snapshot"]
  with con() as c:
   r=c.execute(f"insert into patients({','.join(cols)}) values({','.join(['?']*len(cols))})",[d.get(k) for k in cols])
   c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",(d.get("username"),"CREATE","patient",r.lastrowid,json.dumps(d,ensure_ascii=False)));return jsonify(id=r.lastrowid),201
@@ -190,6 +200,7 @@ def patientedit(i):
  with con() as c:
   old=c.execute("select * from patients where id=?",(i,)).fetchone()
   if not old:return jsonify(error="patient not found"),404
+  d=normalize_finance(d,dict(old))
   vals=[d.get(k,old[k]) for k in editable_fields]+[((u or {}).get("username") or d.get("username")),i,expected]
   cur=c.execute("update patients set "+",".join(k+"=?" for k in editable_fields)+",username=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
   if not cur.rowcount:return jsonify(error="record changed by another user"),409

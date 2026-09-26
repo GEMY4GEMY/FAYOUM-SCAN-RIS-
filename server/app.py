@@ -223,12 +223,12 @@ def apptadd():
 @app.put("/api/appointments/<int:i>")
 def apptedit(i):
  if not allowed("booking_manage"):return jsonify(error="permission denied"),403
- d=request.json or {};u=user();expected=int(d.get("row_version",1));allowed=["patient_name","phone","payment_type","unit","exam","appointment_date","appointment_time","period","doctor","notes","status"]
+ d=request.json or {};u=user();expected=int(d.get("row_version",1));editable_fields=["patient_name","phone","payment_type","unit","exam","appointment_date","appointment_time","period","doctor","notes","status"]
  with con() as c:
   old=c.execute("select * from appointments where id=?",(i,)).fetchone()
   if not old:return jsonify(error="appointment not found"),404
-  vals=[d.get(k,old[k]) for k in allowed]+[((u or {}).get("username")),i,expected]
-  cur=c.execute("update appointments set "+",".join(k+"=?" for k in allowed)+",updated_by=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
+  vals=[d.get(k,old[k]) for k in editable_fields]+[((u or {}).get("username")),i,expected]
+  cur=c.execute("update appointments set "+",".join(k+"=?" for k in editable_fields)+",updated_by=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
   if not cur.rowcount:return jsonify(error="appointment changed by another user"),409
   c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data,new_data) values(?,?,?,?,?,?)",((u or {}).get("username"),"UPDATE","appointment",i,json.dumps(dict(old),ensure_ascii=False),json.dumps(d,ensure_ascii=False)))
  return jsonify(ok=True)

@@ -8,6 +8,8 @@ def ok(r,code=None):
  if code is None: assert 200 <= r.status_code < 300,(r.status_code,r.get_data(as_text=True))
  else: assert r.status_code==code,(r.status_code,r.get_data(as_text=True))
 r=c.get("/api/health");ok(r)
+r=c.get("/api/patients");ok(r,401)
+r=c.get("/api/export/patients.xlsx");ok(r,401)
 r=c.post("/api/login",json={"username":"admin","password":"admin123"});ok(r)
 j=r.get_json();assert j.get("token")
 H={"Authorization":"Bearer "+j["token"]}

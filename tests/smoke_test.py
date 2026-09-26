@@ -14,6 +14,8 @@ r=c.post("/api/login",json={"username":"admin","password":"admin123"});ok(r)
 j=r.get_json();assert j.get("token")
 H={"Authorization":"Bearer "+j["token"]}
 r=c.get("/api/permissions",headers=H);ok(r);assert "*" in r.get_json()["permissions"]
+r=c.get("/api/permissions/user",headers=H);ok(r);assert "patient_edit" in r.get_json()["permissions"]
+
 r=c.post("/api/payment-types",headers=H,json={"name":"TEST CONTRACT","category":"Contract"});ok(r); payid=r.get_json()["id"]
 r=c.post("/api/exams",headers=H,json={"unit":"CT","name":"TEST CT","base_price":1000});ok(r); examid=r.get_json()["id"]
 r=c.post("/api/patients",headers=H,json={"name":"TEST PATIENT","phone":"01000000000","payment_type":"Cash","unit":"CT","exam":"TEST CT","exam_price":1000,"coverage_percentage":10,"coverage_amount":100,"additional_fees":50,"discount":25,"paid_amount":500,"remaining_amount":425,"total_amount":925,"price_snapshot":"{\"price\":1000,\"coverage_percentage\":10,\"total_amount\":925}","case_date":"2026-09-26"});ok(r)
@@ -46,3 +48,10 @@ r=c.put(f"/api/payment-types/{payid}",headers=H,json={"name":"TEST CONTRACT UPDA
 r=c.put(f"/api/exams/{examid}",headers=H,json={"unit":"CT","name":"TEST CT UPDATED","base_price":1100});ok(r)
 r=c.put(f"/api/exams/{examid}",headers=H,json={"active":0});ok(r)
 r=c.get("/api/exams?unit=CT",headers=H);ok(r);assert not any(x["id"]==examid for x in r.get_json())
+r=c.post("/api/backup",headers=H);ok(r); backup_name=r.get_json()["file"]
+r=c.put("/api/settings",headers=H,json={"restore_probe":"before"});ok(r)
+r=c.post("/api/backup",headers=H);ok(r); restore_name=r.get_json()["file"]
+r=c.put("/api/settings",headers=H,json={"restore_probe":"after"});ok(r)
+r=c.post("/api/backups/"+restore_name+"/restore",headers=H);ok(r);assert r.get_json().get("safety_backup")
+r=c.get("/api/settings",headers=H);ok(r);assert r.get_json().get("restore_probe")=="before"
+

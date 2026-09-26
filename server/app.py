@@ -7,7 +7,8 @@ from openpyxl.styles import Font,PatternFill,Alignment,Border,Side
 
 BUNDLE=getattr(sys,"_MEIPASS",os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RUNTIME=os.path.dirname(sys.executable) if getattr(sys,"frozen",False) else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB=os.path.join(RUNTIME,"data","fayoum_scan.db"); BACKUPS=os.path.join(RUNTIME,"backups")
+DATA_ROOT=os.environ.get("FAYOUM_SCAN_DATA_DIR",RUNTIME)
+DB=os.path.join(DATA_ROOT,"data","fayoum_scan.db"); BACKUPS=os.path.join(DATA_ROOT,"backups")
 SCHEMA=os.path.join(BUNDLE,"server","schema.sql"); WEB=os.path.join(BUNDLE,"web")
 app=Flask(__name__,static_folder=WEB); TOKENS={}
 

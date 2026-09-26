@@ -1,6 +1,9 @@
-from flask import Flask,request,jsonify,send_from_directory
+from flask import Flask,request,jsonify,send_from_directory,send_file
 import sqlite3,os,sys,secrets,hashlib,json,shutil
 from datetime import datetime
+from io import BytesIO
+from openpyxl import Workbook,load_workbook
+from openpyxl.styles import Font,PatternFill,Alignment,Border,Side
 
 BUNDLE=getattr(sys,"_MEIPASS",os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RUNTIME=os.path.dirname(sys.executable) if getattr(sys,"frozen",False) else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -188,6 +191,56 @@ def apptdelete(i):
   if not old:return jsonify(error="appointment not found"),404
   c.execute("delete from appointments where id=?",(i,));c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data) values(?,?,?,?,?)",(a["username"],"DELETE","appointment",i,json.dumps(dict(old),ensure_ascii=False)))
  return jsonify(ok=True)
+@app.get("/api/export/patients.xlsx")
+def exportpatients():
+ q="select * from patients where 1=1";a=[]
+ for col,arg in [("case_date","date"),("unit","unit")]:
+  v=request.args.get(arg)
+  if v and v!="all":q+=" and "+col+"=?";a.append(v)
+ with con() as c:rows=[dict(x) for x in c.execute(q+" order by id",a)]
+ wb=Workbook();ws=wb.active;ws.title="Patients"
+ headers=["ID","Date","Name","Phone","Payment Type","Unit","Exam","Exam Price","Coverage %","Coverage Amount","Additional Fees","Discount","Total","Doctor","User"]
+ keys=["id","case_date","name","phone","payment_type","unit","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","doctor","username"]
+ ws.append(headers)
+ for r in rows:ws.append([r.get(k) for k in keys])
+ fill=PatternFill("solid",fgColor="1B2A6B");font=Font(color="FFFFFF",bold=True)
+ for cell in ws[1]:cell.fill=fill;cell.font=font;cell.alignment=Alignment(horizontal="center")
+ widths=[8,14,28,16,22,14,28,14,12,16,16,12,14,24,18]
+ for i,w in enumerate(widths,1):ws.column_dimensions[chr(64+i)].width=w
+ ws.freeze_panes="A2";ws.auto_filter.ref=ws.dimensions
+ out=BytesIO();wb.save(out);out.seek(0)
+ return send_file(out,as_attachment=True,download_name="FayoumScan_Patients_"+(request.args.get("date") or "All")+".xlsx",mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+@app.get("/api/price-plans/<int:pid>/export.xlsx")
+def exportplan(pid):
+ with con() as c:
+  p=c.execute("select p.*,t.name payment_type from price_plans p join payment_types t on t.id=p.payment_type_id where p.id=?",(pid,)).fetchone()
+  if not p:return jsonify(error="plan not found"),404
+  rows=c.execute("select e.unit,e.id exam_id,e.name,i.price,i.coverage_percentage,i.active from exams e left join price_plan_items i on i.exam_id=e.id and i.price_plan_id=? where e.active=1 order by e.unit,e.name",(pid,)).fetchall()
+ wb=Workbook();ws=wb.active;ws.title="Price Plan";ws.append(["Unit","Exam ID","Exam Name","Price","Coverage %","Active"])
+ for r in rows:ws.append([r["unit"],r["exam_id"],r["name"],r["price"] if r["price"] is not None else "",r["coverage_percentage"] if r["coverage_percentage"] is not None else 0,r["active"] if r["active"] is not None else 1])
+ for c in ws[1]:c.fill=PatternFill("solid",fgColor="1B2A6B");c.font=Font(color="FFFFFF",bold=True);c.alignment=Alignment(horizontal="center")
+ for col,w in {"A":18,"B":12,"C":36,"D":16,"E":16,"F":12}.items():ws.column_dimensions[col].width=w
+ info=wb.create_sheet("Instructions");info.append(["FAYOUM SCAN RIS - Price Plan"]);info.append(["Payment Type",p["payment_type"]]);info.append(["Plan",p["name"]]);info.append(["Version",p["version"]]);info.append(["Valid From",p["valid_from"]]);info.append(["Do not change Exam ID. Enter Price and Coverage %, then import this workbook."])
+ out=BytesIO();wb.save(out);out.seek(0);return send_file(out,as_attachment=True,download_name="PricePlan_"+str(pid)+".xlsx",mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+@app.post("/api/price-plans/<int:pid>/import.xlsx")
+def importplan(pid):
+ if not admin():return jsonify(error="admin required"),403
+ if "file" not in request.files:return jsonify(error="xlsx file required"),400
+ try:wb=load_workbook(request.files["file"],data_only=True);ws=wb["Price Plan"]
+ except Exception as e:return jsonify(error="invalid xlsx: "+str(e)),400
+ parsed=[];errors=[]
+ for n,row in enumerate(ws.iter_rows(min_row=2,values_only=True),2):
+  if not any(v is not None and v!="" for v in row):continue
+  try:
+   exam_id=int(row[1]);price=float(row[3]);coverage=float(row[4] or 0);active=1 if row[5] in (None,"",1,True,"1","Yes","YES") else 0
+   if price<0 or not 0<=coverage<=100:raise ValueError("invalid price/coverage")
+   parsed.append((pid,exam_id,price,coverage,active))
+  except Exception as e:errors.append({"row":n,"error":str(e)})
+ if errors:return jsonify(error="validation failed",errors=errors),422
+ with con() as c:
+  if not c.execute("select 1 from price_plans where id=?",(pid,)).fetchone():return jsonify(error="plan not found"),404
+  for x in parsed:c.execute("insert into price_plan_items(price_plan_id,exam_id,price,coverage_percentage,active) values(?,?,?,?,?) on conflict(price_plan_id,exam_id) do update set price=excluded.price,coverage_percentage=excluded.coverage_percentage,active=excluded.active",x)
+ return jsonify(ok=True,imported=len(parsed))
 @app.get("/api/audit")
 def audit():
  if not admin():return jsonify(error="admin required"),403

@@ -28,6 +28,8 @@ def init():
   cols={x["name"] for x in c.execute("pragma table_info(patients)")}
   for name,sqltype,default in [("paid_amount","REAL","0"),("remaining_amount","REAL","0"),("payment_method","TEXT","\'Cash\'")]:
    if name not in cols:c.execute(f"alter table patients add column {name} {sqltype} default {default}")
+  for p in ["patient_edit","booking_manage","export","view_financial"]:
+   c.execute("insert or ignore into role_permissions(role,permission,allowed) values(?,?,1)",("user",p))
   if not c.execute("select count(*) from users").fetchone()[0]:
    c.execute("insert into users(username,password_hash,role) values(?,?,?)",("admin",hp("admin123"),"admin"))
 
@@ -249,6 +251,20 @@ def importplan(pid):
   if not c.execute("select 1 from price_plans where id=?",(pid,)).fetchone():return jsonify(error="plan not found"),404
   for x in parsed:c.execute("insert into price_plan_items(price_plan_id,exam_id,price,coverage_percentage,active) values(?,?,?,?,?) on conflict(price_plan_id,exam_id) do update set price=excluded.price,coverage_percentage=excluded.coverage_percentage,active=excluded.active",x)
  return jsonify(ok=True,imported=len(parsed))
+@app.get("/api/permissions")
+def permissions():
+ u=user()
+ if not u:return jsonify(error="login required"),401
+ if u["role"]=="admin":return jsonify(role="admin",permissions=["*"])
+ with con() as c:return jsonify(role=u["role"],permissions=[x["permission"] for x in c.execute("select permission from role_permissions where role=? and allowed=1",(u["role"],))])
+@app.put("/api/permissions/<role>")
+def setpermissions(role):
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {};perms=d.get("permissions",[])
+ with con() as c:
+  c.execute("delete from role_permissions where role=?",(role,))
+  for p in perms:c.execute("insert into role_permissions(role,permission,allowed) values(?,?,1)",(role,p))
+ return jsonify(ok=True)
 @app.get("/api/settings")
 def getsettings():
  with con() as c:return jsonify({x["key"]:x["value"] for x in c.execute("select key,value from settings")})

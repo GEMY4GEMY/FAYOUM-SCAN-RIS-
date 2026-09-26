@@ -29,8 +29,9 @@ jobs:
           New-Item -ItemType Directory -Force release
           Copy-Item dist/FayoumScanRIS-Beta.exe release/
           Copy-Item START_SERVER.bat release/
-          Compress-Archive -Path release/* -DestinationPath FayoumScanRIS-Beta-Windows-x64.zip
+          Copy-Item BETA_README_AR.md release/README_AR.md
       - uses: actions/upload-artifact@v4
         with:
           name: FayoumScanRIS-Beta-Windows-x64
-          path: FayoumScanRIS-Beta-Windows-x64.zip
+          path: release/*
+          if-no-files-found: error

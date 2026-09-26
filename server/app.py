@@ -92,6 +92,26 @@ def addexam():
  try:
   with con() as c:r=c.execute("insert into exams(unit,name,base_price) values(?,?,?)",(d["unit"],d["name"],float(d.get("base_price",0))));return jsonify(id=r.lastrowid),201
  except sqlite3.IntegrityError:return jsonify(error="exam exists"),409
+@app.put("/api/payment-types/<int:i>")
+def editpay(i):
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ with con() as c:
+  old=c.execute("select * from payment_types where id=?",(i,)).fetchone()
+  if not old:return jsonify(error="payment type not found"),404
+  try:c.execute("update payment_types set name=?,category=?,notes=?,active=? where id=?",(d.get("name",old["name"]),d.get("category",old["category"]),d.get("notes",old["notes"]),int(d.get("active",old["active"])),i))
+  except sqlite3.IntegrityError:return jsonify(error="payment type exists"),409
+ return jsonify(ok=True)
+@app.put("/api/exams/<int:i>")
+def editexam(i):
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ with con() as c:
+  old=c.execute("select * from exams where id=?",(i,)).fetchone()
+  if not old:return jsonify(error="exam not found"),404
+  try:c.execute("update exams set unit=?,name=?,base_price=?,active=? where id=?",(d.get("unit",old["unit"]),d.get("name",old["name"]),float(d.get("base_price",old["base_price"] or 0)),int(d.get("active",old["active"])),i))
+  except sqlite3.IntegrityError:return jsonify(error="exam exists"),409
+ return jsonify(ok=True)
 @app.get("/api/price-plans")
 def plans():
  with con() as c:return jsonify([dict(x) for x in c.execute("select p.*,t.name payment_type from price_plans p join payment_types t on t.id=p.payment_type_id order by p.id desc")])

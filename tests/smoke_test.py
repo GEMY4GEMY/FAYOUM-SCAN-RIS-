@@ -13,6 +13,9 @@ r=c.get("/api/export/patients.xlsx");ok(r,401)
 r=c.post("/api/login",json={"username":"admin","password":"admin123"});ok(r)
 j=r.get_json();assert j.get("token")
 H={"Authorization":"Bearer "+j["token"]}
+r=c.get("/api/patients",headers=H);ok(r,428)
+r=c.post("/api/change-password",headers=H,json={"current_password":"admin123","new_password":"BetaPass987"});ok(r)
+r=c.get("/api/patients",headers=H);ok(r)
 r=c.get("/api/permissions",headers=H);ok(r);assert "*" in r.get_json()["permissions"]
 r=c.get("/api/permissions/user",headers=H);ok(r);assert "patient_edit" in r.get_json()["permissions"]
 

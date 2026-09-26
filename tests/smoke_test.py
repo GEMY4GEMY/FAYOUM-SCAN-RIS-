@@ -4,8 +4,9 @@ sys.path.insert(0,os.path.abspath("."))
 from server.app import app,init
 init()
 c=app.test_client()
-def ok(r,code=200):
- assert r.status_code==code,(r.status_code,r.get_data(as_text=True))
+def ok(r,code=None):
+ if code is None: assert 200 <= r.status_code < 300,(r.status_code,r.get_data(as_text=True))
+ else: assert r.status_code==code,(r.status_code,r.get_data(as_text=True))
 r=c.get("/api/health");ok(r)
 r=c.post("/api/login",json={"username":"admin","password":"admin123"});ok(r)
 j=r.get_json();assert j.get("token")

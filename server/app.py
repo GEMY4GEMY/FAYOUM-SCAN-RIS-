@@ -323,6 +323,10 @@ def permissions():
  if not u:return jsonify(error="login required"),401
  if u["role"]=="admin":return jsonify(role="admin",permissions=["*"])
  with con() as c:return jsonify(role=u["role"],permissions=[x["permission"] for x in c.execute("select permission from role_permissions where role=? and allowed=1",(u["role"],))])
+@app.get("/api/permissions/<role>")
+def rolepermissions(role):
+ if not admin():return jsonify(error="admin required"),403
+ with con() as c:return jsonify(role=role,permissions=[x["permission"] for x in c.execute("select permission from role_permissions where role=? and allowed=1 order by permission",(role,))])
 @app.put("/api/permissions/<role>")
 def setpermissions(role):
  if not admin():return jsonify(error="admin required"),403

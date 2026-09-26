@@ -57,6 +57,42 @@ def exams():
  u=request.args.get("unit");q="select * from exams where active=1";a=[]
  if u:q+=" and unit=?";a=[u]
  with con() as c:return jsonify([dict(x) for x in c.execute(q+" order by unit,name",a)])
+@app.post("/api/payment-types")
+def addpay():
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ try:
+  with con() as c:r=c.execute("insert into payment_types(name,category,notes) values(?,?,?)",(d["name"],d.get("category"),d.get("notes")));return jsonify(id=r.lastrowid),201
+ except sqlite3.IntegrityError:return jsonify(error="payment type exists"),409
+@app.post("/api/exams")
+def addexam():
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ try:
+  with con() as c:r=c.execute("insert into exams(unit,name,base_price) values(?,?,?)",(d["unit"],d["name"],float(d.get("base_price",0))));return jsonify(id=r.lastrowid),201
+ except sqlite3.IntegrityError:return jsonify(error="exam exists"),409
+@app.get("/api/price-plans")
+def plans():
+ with con() as c:return jsonify([dict(x) for x in c.execute("select p.*,t.name payment_type from price_plans p join payment_types t on t.id=p.payment_type_id order by p.id desc")])
+@app.post("/api/price-plans")
+def addplan():
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ with con() as c:r=c.execute("insert into price_plans(payment_type_id,name,version,valid_from,valid_to,active) values(?,?,?,?,?,?)",(d["payment_type_id"],d["name"],int(d.get("version",1)),d["valid_from"],d.get("valid_to"),int(d.get("active",1))));return jsonify(id=r.lastrowid),201
+@app.post("/api/price-plans/<int:pid>/items")
+def planitem(pid):
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {}
+ with con() as c:c.execute("insert into price_plan_items(price_plan_id,exam_id,price,coverage_percentage,active) values(?,?,?,?,1) on conflict(price_plan_id,exam_id) do update set price=excluded.price,coverage_percentage=excluded.coverage_percentage,active=1",(pid,d["exam_id"],float(d["price"]),float(d.get("coverage_percentage",0))))
+ return jsonify(ok=True)
+@app.get("/api/pricing/resolve")
+def resolve():
+ pt=request.args.get("payment_type","");ex=request.args.get("exam","");day=request.args.get("date") or datetime.now().date().isoformat()
+ with con() as c:
+  r=c.execute("select i.id item_id,p.id plan_id,p.name plan_name,p.version,i.price,i.coverage_percentage from price_plan_items i join price_plans p on p.id=i.price_plan_id join payment_types t on t.id=p.payment_type_id join exams e on e.id=i.exam_id where t.name=? and e.name=? and p.active=1 and i.active=1 and p.valid_from<=? and (p.valid_to is null or p.valid_to='' or p.valid_to>=?) order by p.version desc,p.id desc limit 1",(pt,ex,day,day)).fetchone()
+  if r:return jsonify(found=True,**dict(r))
+  e=c.execute("select base_price from exams where name=? and active=1 order by id desc limit 1",(ex,)).fetchone()
+  return jsonify(found=False,price=(e["base_price"] if e else 0),coverage_percentage=0)
 @app.get("/api/patients")
 def patients():
  q="select * from patients where 1=1";a=[]

@@ -26,7 +26,7 @@ pid=r.get_json().get("id");assert pid
 r=c.get("/api/patients?date=2026-09-26",headers=H);ok(r)
 rows=r.get_json();assert any(x["id"]==pid for x in rows)
 row=next(x for x in rows if x["id"]==pid)
-assert row["coverage_amount"]==100 and row["additional_fees"]==50 and row["total_amount"]==925 and row["remaining_amount"]==425
+assert row["exam_price"]==1000 and row["coverage_percentage"]==0 and row["coverage_amount"]==0 and row["additional_fees"]==50 and row["total_amount"]==1025 and row["remaining_amount"]==525
 r=c.put(f"/api/patients/{pid}",headers=H,json={"name":"TEST PATIENT UPDATED","row_version":row["row_version"]});ok(r)
 r=c.get("/api/dashboard?date=2026-09-26",headers=H);ok(r);assert r.get_json()["cases"]>=1
 r=c.get("/api/export/patients.xlsx?date=2026-09-26",headers=H);ok(r);assert "spreadsheetml" in r.content_type
@@ -39,7 +39,7 @@ r=c.post(f"/api/price-plans/{planid}/items",headers=H,json={"exam_id":examid,"pr
 r=c.post("/api/patients",headers=H,json={"name":"TAMPER TEST","phone":"01555555555","payment_type":"TEST CONTRACT","unit":"CT","exam":"TEST CT","exam_price":1,"coverage_percentage":99,"case_date":"2026-09-26","paid_amount":0});ok(r); tamperid=r.get_json()["id"]
 r=c.get("/api/patients?date=2026-09-26",headers=H);ok(r); trow=next(x for x in r.get_json() if x["id"]==tamperid);assert trow["exam_price"]==800 and trow["coverage_percentage"]==25 and trow["total_amount"]==600
 
-r=c.get("/api/pricing/resolve?payment_type=TEST%20CONTRACT&exam=TEST%20CT&date=2026-09-26",headers=H);ok(r); pricing=r.get_json();assert pricing["found"] and pricing["price"]==800 and pricing["coverage_percentage"]==25
+r=c.get("/api/pricing/resolve?payment_type=TEST%20CONTRACT&exam=TEST%20CT&unit=CT&date=2026-09-26",headers=H);ok(r); pricing=r.get_json();assert pricing["found"] and pricing["price"]==800 and pricing["coverage_percentage"]==25
 r=c.get(f"/api/price-plans/{planid}/items",headers=H);ok(r);assert len(r.get_json())==1
 r=c.post("/api/appointments",headers=H,json={"patient_name":"PRICED BOOKING","phone":"01222222222","payment_type":"TEST CONTRACT","unit":"CT","exam":"TEST CT","appointment_date":"2026-09-28","status":"Booked"});ok(r); apid=r.get_json()["id"]
 r=c.get("/api/appointments?date=2026-09-28",headers=H);ok(r); arow=next(x for x in r.get_json() if x["id"]==apid); oldver=arow["row_version"]

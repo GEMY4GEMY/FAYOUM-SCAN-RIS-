@@ -27,6 +27,11 @@ r=c.post("/api/appointments",headers=H,json={"patient_name":"BOOKING TEST","phon
 r=c.get("/api/appointments?date=2026-09-27",headers=H);ok(r);assert len(r.get_json())>=1
 print("FAYOUM SCAN RIS smoke tests passed")
 
+r=c.post("/api/price-plans",headers=H,json={"payment_type_id":payid,"name":"TEST PLAN","version":1,"valid_from":"2026-01-01","active":1});ok(r); planid=r.get_json()["id"]
+r=c.post(f"/api/price-plans/{planid}/items",headers=H,json={"exam_id":examid,"price":800,"coverage_percentage":25});ok(r)
+r=c.get("/api/pricing/resolve?payment_type=TEST%20CONTRACT&exam=TEST%20CT&date=2026-09-26",headers=H);ok(r); pricing=r.get_json();assert pricing["found"] and pricing["price"]==800 and pricing["coverage_percentage"]==25
+r=c.get(f"/api/price-plans/{planid}/items",headers=H);ok(r);assert len(r.get_json())==1
+r=c.put(f"/api/price-plans/{planid}",headers=H,json={"version":2,"valid_to":"2026-12-31"});ok(r)
 r=c.put(f"/api/payment-types/{payid}",headers=H,json={"name":"TEST CONTRACT UPDATED","category":"Contract"});ok(r)
 r=c.put(f"/api/exams/{examid}",headers=H,json={"unit":"CT","name":"TEST CT UPDATED","base_price":1100});ok(r)
 r=c.put(f"/api/exams/{examid}",headers=H,json={"active":0});ok(r)

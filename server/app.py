@@ -160,14 +160,21 @@ def planitem(pid):
  d=request.json or {}
  with con() as c:c.execute("insert into price_plan_items(price_plan_id,exam_id,price,coverage_percentage,active) values(?,?,?,?,1) on conflict(price_plan_id,exam_id) do update set price=excluded.price,coverage_percentage=excluded.coverage_percentage,active=1",(pid,d["exam_id"],float(d["price"]),float(d.get("coverage_percentage",0))))
  return jsonify(ok=True)
+def pricing_for(c,pt,ex,unit,day):
+ q="select i.id item_id,p.id plan_id,p.name plan_name,p.version,i.price,i.coverage_percentage from price_plan_items i join price_plans p on p.id=i.price_plan_id join payment_types t on t.id=p.payment_type_id join exams e on e.id=i.exam_id where t.name=? and e.name=? and p.active=1 and i.active=1 and p.valid_from<=? and (p.valid_to is null or p.valid_to='' or p.valid_to>=?)"
+ args=[pt,ex,day,day]
+ if unit:q+=" and e.unit=?";args.append(unit)
+ r=c.execute(q+" order by p.version desc,p.id desc limit 1",args).fetchone()
+ if r:return dict(r)|{"found":True}
+ q="select id,base_price from exams where name=? and active=1";args=[ex]
+ if unit:q+=" and unit=?";args.append(unit)
+ e=c.execute(q+" order by id desc limit 1",args).fetchone()
+ return {"found":False,"price":float(e["base_price"] or 0) if e else 0,"coverage_percentage":0,"plan_id":None,"item_id":None}
+
 @app.get("/api/pricing/resolve")
 def resolve():
- pt=request.args.get("payment_type","");ex=request.args.get("exam","");day=request.args.get("date") or datetime.now().date().isoformat()
- with con() as c:
-  r=c.execute("select i.id item_id,p.id plan_id,p.name plan_name,p.version,i.price,i.coverage_percentage from price_plan_items i join price_plans p on p.id=i.price_plan_id join payment_types t on t.id=p.payment_type_id join exams e on e.id=i.exam_id where t.name=? and e.name=? and p.active=1 and i.active=1 and p.valid_from<=? and (p.valid_to is null or p.valid_to='' or p.valid_to>=?) order by p.version desc,p.id desc limit 1",(pt,ex,day,day)).fetchone()
-  if r:return jsonify(found=True,**dict(r))
-  e=c.execute("select base_price from exams where name=? and active=1 order by id desc limit 1",(ex,)).fetchone()
-  return jsonify(found=False,price=(e["base_price"] if e else 0),coverage_percentage=0)
+ pt=request.args.get("payment_type","");ex=request.args.get("exam","");unit=request.args.get("unit","");day=request.args.get("date") or datetime.now().date().isoformat()
+ with con() as c:return jsonify(**pricing_for(c,pt,ex,unit,day))
 def normalize_finance(d,base=None):
  base=base or {}
  def num(k,default=0):
@@ -189,7 +196,10 @@ def patients():
  with con() as c:return jsonify([dict(x) for x in c.execute(q+" order by id desc limit 3000",a)])
 @app.post("/api/patients")
 def patientadd():
- d=normalize_finance(request.json or {});u=user();d["username"]=(u or {}).get("username"); cols=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","username","unit","case_date","timestamp","price_plan_id","price_plan_item_id","price_snapshot"]
+ d=request.json or {};u=user();d["username"]=(u or {}).get("username")
+ with con() as c:
+  pr=pricing_for(c,d.get("payment_type",""),d.get("exam",""),d.get("unit",""),d.get("case_date") or datetime.now().date().isoformat())
+ d["exam_price"]=pr["price"];d["coverage_percentage"]=pr["coverage_percentage"];d["price_plan_id"]=pr.get("plan_id");d["price_plan_item_id"]=pr.get("item_id");d=normalize_finance(d); cols=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","username","unit","case_date","timestamp","price_plan_id","price_plan_item_id","price_snapshot"]
  with con() as c:
   r=c.execute(f"insert into patients({','.join(cols)}) values({','.join(['?']*len(cols))})",[d.get(k) for k in cols])
   c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",(d.get("username"),"CREATE","patient",r.lastrowid,json.dumps(d,ensure_ascii=False)));return jsonify(id=r.lastrowid),201

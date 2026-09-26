@@ -153,6 +153,11 @@ def migrate():
    c.execute("insert into patients("+",".join(cols)+") values("+",".join(["?"]*len(cols))+")",vals);inserted+=1
   stats={"patients_inserted":inserted,"patients_received":len(d.get("patients",[])),"exams_received":len(d.get("exams",[])),"payment_types_received":len(d.get("paymentTypes",[]))}
  return jsonify(ok=True,**stats)
+@app.get("/api/patients/by-phone/<path:phone>")
+def patientphone(phone):
+ with con() as c:
+  rows=[dict(x) for x in c.execute("select id,name,phone,payment_type,unit,exam,doctor,case_date,total_amount,paid_amount,remaining_amount from patients where phone=? order by case_date desc,id desc limit 20",(phone,))]
+ return jsonify(found=bool(rows),history=rows)
 @app.get("/api/appointments")
 def appts():
  q="select * from appointments where 1=1";a=[]

@@ -21,6 +21,11 @@ def vp(p,h):
 def user():
  return TOKENS.get(request.headers.get("Authorization","").replace("Bearer ",""))
 def admin(): return user() if user() and user()["role"]=="admin" else None
+def allowed(permission):
+ u=user()
+ if not u:return False
+ if u["role"]=="admin":return True
+ with con() as c:return bool(c.execute("select 1 from role_permissions where role=? and permission=? and allowed=1",(u["role"],permission)).fetchone())
 def init():
  os.makedirs(os.path.dirname(DB),exist_ok=True);os.makedirs(BACKUPS,exist_ok=True)
  with con() as c:
@@ -118,6 +123,7 @@ def patientadd():
   c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",(d.get("username"),"CREATE","patient",r.lastrowid,json.dumps(d,ensure_ascii=False)));return jsonify(id=r.lastrowid),201
 @app.put("/api/patients/<int:i>")
 def patientedit(i):
+ if not allowed("patient_edit"):return jsonify(error="permission denied"),403
  d=request.json or {};expected=int(d.get("row_version",1));u=user();allowed=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","unit","case_date"]
  with con() as c:
   old=c.execute("select * from patients where id=?",(i,)).fetchone()
@@ -162,16 +168,19 @@ def patientphone(phone):
  return jsonify(found=bool(rows),history=rows)
 @app.get("/api/appointments")
 def appts():
+ if not allowed("booking_manage"):return jsonify(error="permission denied"),403
  q="select * from appointments where 1=1";a=[]
  if request.args.get("date"):q+=" and appointment_date=?";a.append(request.args["date"])
  if request.args.get("status") not in (None,"all"):q+=" and status=?";a.append(request.args["status"])
  with con() as c:return jsonify([dict(x) for x in c.execute(q+" order by appointment_date,appointment_time,id desc",a)])
 @app.post("/api/appointments")
 def apptadd():
+ if not allowed("booking_manage"):return jsonify(error="permission denied"),403
  d=request.json or {};u=user();cols=["patient_name","phone","payment_type","unit","exam","appointment_date","appointment_time","period","doctor","notes","status","created_by","updated_by"];v=[d.get(k) for k in cols];v[10]=v[10] or "Booked";v[11]=v[11] or (u["username"] if u else "");v[12]=v[11]
  with con() as c:r=c.execute(f"insert into appointments({','.join(cols)}) values({','.join(['?']*len(cols))})",v);return jsonify(id=r.lastrowid),201
 @app.put("/api/appointments/<int:i>")
 def apptedit(i):
+ if not allowed("booking_manage"):return jsonify(error="permission denied"),403
  d=request.json or {};u=user();expected=int(d.get("row_version",1));allowed=["patient_name","phone","payment_type","unit","exam","appointment_date","appointment_time","period","doctor","notes","status"]
  with con() as c:
   old=c.execute("select * from appointments where id=?",(i,)).fetchone()
@@ -183,6 +192,7 @@ def apptedit(i):
  return jsonify(ok=True)
 @app.post("/api/appointments/<int:i>/convert")
 def apptconvert(i):
+ if not allowed("booking_manage"):return jsonify(error="permission denied"),403
  u=user()
  with con() as c:
   a=c.execute("select * from appointments where id=?",(i,)).fetchone()
@@ -203,6 +213,7 @@ def apptdelete(i):
  return jsonify(ok=True)
 @app.get("/api/export/patients.xlsx")
 def exportpatients():
+ if not allowed("export"):return jsonify(error="permission denied"),403
  q="select * from patients where 1=1";a=[]
  for col,arg in [("case_date","date"),("unit","unit")]:
   v=request.args.get(arg)
@@ -286,6 +297,7 @@ def edituser(i):
  return jsonify(ok=True)
 @app.get("/api/dashboard")
 def dashboard():
+ if not allowed("view_financial"):return jsonify(error="permission denied"),403
  day=request.args.get("date");unit=request.args.get("unit");q=" from patients where 1=1";a=[]
  if day:q+=" and case_date=?";a.append(day)
  if unit and unit!="all":q+=" and unit=?";a.append(unit)

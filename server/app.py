@@ -263,6 +263,30 @@ def edituser(i):
   if "role" in d:c.execute("update users set role=? where id=?",(d["role"],i))
   if "active" in d:c.execute("update users set active=? where id=?",(int(bool(d["active"])),i))
  return jsonify(ok=True)
+@app.get("/api/dashboard")
+def dashboard():
+ day=request.args.get("date");unit=request.args.get("unit");q=" from patients where 1=1";a=[]
+ if day:q+=" and case_date=?";a.append(day)
+ if unit and unit!="all":q+=" and unit=?";a.append(unit)
+ with con() as c:
+  r=c.execute("select count(*) cases,coalesce(sum(total_amount),0) total,coalesce(sum(paid_amount),0) paid,coalesce(sum(remaining_amount),0) remaining,coalesce(sum(discount),0) discounts"+q,a).fetchone()
+  contracts=c.execute("select count(*)"+q+" and coalesce(payment_type,'') not in ('','Cash','CASH','نقدي')",a).fetchone()[0]
+ return jsonify(**dict(r),contracts=contracts)
+@app.post("/api/backups/<path:name>/restore")
+def restore(name):
+ if not admin():return jsonify(error="admin required"),403
+ safe=os.path.basename(name);src=os.path.join(BACKUPS,safe)
+ if not os.path.isfile(src):return jsonify(error="backup not found"),404
+ check=sqlite3.connect(src)
+ try:
+  ok=check.execute("pragma integrity_check").fetchone()[0]
+ finally:check.close()
+ if ok!="ok":return jsonify(error="backup integrity check failed"),422
+ safety=os.path.join(BACKUPS,"before_restore_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".db")
+ with con() as live:
+  out=sqlite3.connect(safety);live.backup(out);out.close()
+  source=sqlite3.connect(src);source.backup(live);source.close()
+ return jsonify(ok=True,safety_backup=os.path.basename(safety))
 @app.get("/api/audit")
 def audit():
  if not admin():return jsonify(error="admin required"),403

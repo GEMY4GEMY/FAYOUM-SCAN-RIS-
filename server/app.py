@@ -108,6 +108,45 @@ def patientadd():
  with con() as c:
   r=c.execute(f"insert into patients({','.join(cols)}) values({','.join(['?']*len(cols))})",[d.get(k) for k in cols])
   c.execute("insert into audit_log(username,action,entity_type,entity_id,new_data) values(?,?,?,?,?)",(d.get("username"),"CREATE","patient",r.lastrowid,json.dumps(d,ensure_ascii=False)));return jsonify(id=r.lastrowid),201
+@app.put("/api/patients/<int:i>")
+def patientedit(i):
+ d=request.json or {};expected=int(d.get("row_version",1));u=user();allowed=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","doctor","notes","unit","case_date"]
+ with con() as c:
+  old=c.execute("select * from patients where id=?",(i,)).fetchone()
+  if not old:return jsonify(error="patient not found"),404
+  vals=[d.get(k,old[k]) for k in allowed]+[((u or {}).get("username") or d.get("username")),i,expected]
+  cur=c.execute("update patients set "+",".join(k+"=?" for k in allowed)+",username=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
+  if not cur.rowcount:return jsonify(error="record changed by another user"),409
+  c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data,new_data) values(?,?,?,?,?,?)",((u or {}).get("username"),"UPDATE","patient",i,json.dumps(dict(old),ensure_ascii=False),json.dumps(d,ensure_ascii=False)))
+ return jsonify(ok=True)
+@app.delete("/api/patients/<int:i>")
+def patientdelete(i):
+ a=admin()
+ if not a:return jsonify(error="admin required"),403
+ with con() as c:
+  old=c.execute("select * from patients where id=?",(i,)).fetchone()
+  if not old:return jsonify(error="patient not found"),404
+  c.execute("delete from patients where id=?",(i,));c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data) values(?,?,?,?,?)",(a["username"],"DELETE","patient",i,json.dumps(dict(old),ensure_ascii=False)))
+ return jsonify(ok=True)
+@app.post("/api/migration/rev7")
+def migrate():
+ if not admin():return jsonify(error="admin required"),403
+ d=request.json or {};stats={}
+ with con() as c:
+  for p in d.get("paymentTypes",[]):
+   try:c.execute("insert into payment_types(name,category,notes) values(?,?,?)",(p.get("name"),p.get("category"),p.get("notes")))
+   except sqlite3.IntegrityError:pass
+  for e in d.get("exams",[]):
+   try:c.execute("insert into exams(unit,name,base_price) values(?,?,?)",(e.get("unit"),e.get("name"),float(e.get("price") or 0)))
+   except sqlite3.IntegrityError:pass
+  inserted=0
+  for p in d.get("patients",[]):
+   if p.get("id") is not None and c.execute("select 1 from patients where legacy_id=?",(p.get("id"),)).fetchone():continue
+   cols=["legacy_id","name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","doctor","notes","username","unit","case_date","timestamp"]
+   vals=[p.get("id"),p.get("name"),p.get("paymentType"),p.get("phone"),p.get("exam"),p.get("examPrice"),p.get("coveragePercentage"),p.get("coverageAmount"),p.get("additionalFees"),p.get("discount"),p.get("totalAmount"),p.get("doctor"),p.get("notes"),p.get("user"),p.get("unit"),p.get("date"),p.get("timestamp")]
+   c.execute("insert into patients("+",".join(cols)+") values("+",".join(["?"]*len(cols))+")",vals);inserted+=1
+  stats={"patients_inserted":inserted,"patients_received":len(d.get("patients",[])),"exams_received":len(d.get("exams",[])),"payment_types_received":len(d.get("paymentTypes",[]))}
+ return jsonify(ok=True,**stats)
 @app.get("/api/appointments")
 def appts():
  q="select * from appointments where 1=1";a=[]

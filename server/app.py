@@ -31,7 +31,9 @@ def allowed(permission):
 def protect_api():
  if not request.path.startswith("/api/"):return None
  if request.path in ("/api/health","/api/login"):return None
- if not user():return jsonify(error="authentication required"),401
+ u=user()
+ if not u:return jsonify(error="authentication required"),401
+ if u.get("must_change_password") and request.path not in ("/api/change-password","/api/logout"):return jsonify(error="password change required"),428
 
 def init():
  os.makedirs(os.path.dirname(DB),exist_ok=True);os.makedirs(BACKUPS,exist_ok=True)

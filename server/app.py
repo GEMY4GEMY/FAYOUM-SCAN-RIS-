@@ -27,6 +27,12 @@ def allowed(permission):
  if not u:return False
  if u["role"]=="admin":return True
  with con() as c:return bool(c.execute("select 1 from role_permissions where role=? and permission=? and allowed=1",(u["role"],permission)).fetchone())
+@app.before_request
+def protect_api():
+ if not request.path.startswith("/api/"):return None
+ if request.path in ("/api/health","/api/login"):return None
+ if not user():return jsonify(error="authentication required"),401
+
 def init():
  os.makedirs(os.path.dirname(DB),exist_ok=True);os.makedirs(BACKUPS,exist_ok=True)
  with con() as c:

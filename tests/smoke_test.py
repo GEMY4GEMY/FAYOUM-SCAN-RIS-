@@ -46,6 +46,11 @@ r=c.post(f"/api/price-plans/{planid}/items",headers=H,json={"exam_id":examid,"pr
 r=c.post("/api/patients",headers=H,json={"name":"TAMPER TEST","phone":"01555555555","payment_type":"TEST CONTRACT","unit":"CT","exam":"TEST CT","exam_price":1,"coverage_percentage":99,"case_date":"2026-09-26","paid_amount":0});ok(r); tamperid=r.get_json()["id"]
 r=c.get("/api/patients?date=2026-09-26",headers=H);ok(r); trow=next(x for x in r.get_json() if x["id"]==tamperid);assert trow["exam_price"]==800 and trow["coverage_percentage"]==25 and trow["total_amount"]==600
 
+r=c.put(f"/api/patients/{tamperid}",headers=H,json={"exam_price":1,"coverage_percentage":99,"additional_fees":40,"discount":10,"row_version":trow["row_version"]});ok(r)
+r=c.get("/api/patients?date=2026-09-26",headers=H);ok(r)
+et=next(x for x in r.get_json() if x["id"]==tamperid)
+assert et["exam_price"]==800 and et["coverage_percentage"]==25 and et["coverage_amount"]==200 and et["total_amount"]==630
+es=json.loads(et["price_snapshot"]);assert es["source"]=="patient_edit" and es["plan_id"]==planid and es["price"]==800
 r=c.get("/api/pricing/resolve?payment_type=TEST%20CONTRACT&exam=TEST%20CT&unit=CT&date=2026-09-26",headers=H);ok(r); pricing=r.get_json();assert pricing["found"] and pricing["price"]==800 and pricing["coverage_percentage"]==25
 r=c.get(f"/api/price-plans/{planid}/items",headers=H);ok(r);assert len(r.get_json())==1
 r=c.post("/api/appointments",headers=H,json={"patient_name":"PRICED BOOKING","phone":"01222222222","payment_type":"TEST CONTRACT","unit":"CT","exam":"TEST CT","appointment_date":"2026-09-28","status":"Booked"});ok(r); apid=r.get_json()["id"]

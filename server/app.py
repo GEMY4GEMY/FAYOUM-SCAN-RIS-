@@ -58,7 +58,7 @@ def lan_ip():
 @app.get("/api/health")
 def health():
  port=int(os.getenv("PORT","8787"));ip=lan_ip()
- with con() as c:return jsonify(ok=True,server="FAYOUM SCAN RIS",version="Beta 0.5",patients=c.execute("select count(*) from patients").fetchone()[0],lan_ip=ip,lan_url=f"http://{ip}:{port}",local_url=f"http://127.0.0.1:{port}")
+ with con() as c:return jsonify(ok=True,server="FAYOUM SCAN RIS",version="Main Release",patients=c.execute("select count(*) from patients").fetchone()[0],lan_ip=ip,lan_url=f"http://{ip}:{port}",local_url=f"http://127.0.0.1:{port}")
 @app.post("/api/login")
 def login():
  d=request.json or {}
@@ -250,7 +250,17 @@ def migrate():
    cols=["legacy_id","name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","doctor","notes","username","unit","case_date","timestamp"]
    vals=[p.get("id"),p.get("name"),p.get("paymentType"),p.get("phone"),p.get("exam"),p.get("examPrice"),p.get("coveragePercentage"),p.get("coverageAmount"),p.get("additionalFees"),p.get("discount"),p.get("totalAmount"),p.get("doctor"),p.get("notes"),p.get("user"),p.get("unit"),p.get("date"),p.get("timestamp")]
    c.execute("insert into patients("+",".join(cols)+") values("+",".join(["?"]*len(cols))+")",vals);inserted+=1
-  stats={"patients_inserted":inserted,"patients_received":len(d.get("patients",[])),"exams_received":len(d.get("exams",[])),"payment_types_received":len(d.get("paymentTypes",[]))}
+  settings_saved=0
+  for item in d.get("settings",[]):
+   key=item.get("key"); value=item.get("value")
+   if not key:continue
+   if not isinstance(value,str):value=json.dumps(value,ensure_ascii=False)
+   c.execute("insert into settings(key,value) values(?,?) on conflict(key) do update set value=excluded.value",(key,value));settings_saved+=1
+  legacy_users=[]
+  for item in d.get("users",[]):
+   legacy_users.append({"username":item.get("username"),"type":item.get("type"),"lastLogin":item.get("lastLogin"),"createdAt":item.get("createdAt")})
+  if legacy_users:c.execute("insert into settings(key,value) values('legacy_rev7_users',?) on conflict(key) do update set value=excluded.value",(json.dumps(legacy_users,ensure_ascii=False),))
+  stats={"patients_inserted":inserted,"patients_received":len(d.get("patients",[])),"exams_received":len(d.get("exams",[])),"payment_types_received":len(d.get("paymentTypes",[])),"settings_saved":settings_saved,"legacy_users_archived":len(legacy_users),"legacy_backups_received":len(d.get("backups",[]))}
  return jsonify(ok=True,**stats)
 @app.get("/api/patients/by-phone/<path:phone>")
 def patientphone(phone):

@@ -1,8 +1,9 @@
 import os,sys,tempfile,json
 os.environ["FAYOUM_SCAN_DATA_DIR"]=tempfile.mkdtemp(prefix="fayoum_test_")
 sys.path.insert(0,os.path.abspath("."))
-from server.app import app,init
+from server.app import app,init,startup_backup,BACKUPS
 init()
+startup_name=startup_backup(retain=2);assert startup_name and os.path.isfile(os.path.join(BACKUPS,startup_name))
 c=app.test_client()
 def ok(r,code=None):
  if code is None: assert 200 <= r.status_code < 300,(r.status_code,r.get_data(as_text=True))

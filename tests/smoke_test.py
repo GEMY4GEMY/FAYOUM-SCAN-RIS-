@@ -1,4 +1,4 @@
-import os,sys,tempfile
+import os,sys,tempfile,json
 os.environ["FAYOUM_SCAN_DATA_DIR"]=tempfile.mkdtemp(prefix="fayoum_test_")
 sys.path.insert(0,os.path.abspath("."))
 from server.app import app,init
@@ -33,7 +33,7 @@ pid=r.get_json().get("id");assert pid
 r=c.get("/api/patients?date=2026-09-26",headers=H);ok(r)
 rows=r.get_json();assert any(x["id"]==pid for x in rows)
 row=next(x for x in rows if x["id"]==pid)
-assert row["exam_price"]==1000 and row["coverage_percentage"]==0 and row["coverage_amount"]==0 and row["additional_fees"]==50 and row["total_amount"]==1025 and row["remaining_amount"]==525
+assert row["exam_price"]==1000 and row["coverage_percentage"]==0 and row["coverage_amount"]==0 and row["additional_fees"]==50 and row["total_amount"]==1025 and row["remaining_amount"]==525; snap=json.loads(row["price_snapshot"]);assert snap["price"]==1000 and snap["coverage_percentage"]==0 and snap["total_amount"]==1025 and snap["payment_type"]=="Cash"
 r=c.put(f"/api/patients/{pid}",headers=H,json={"name":"TEST PATIENT UPDATED","row_version":row["row_version"]});ok(r)
 r=c.get("/api/dashboard?date=2026-09-26",headers=H);ok(r);assert r.get_json()["cases"]>=1
 r=c.get("/api/export/patients.xlsx?date=2026-09-26",headers=H);ok(r);assert "spreadsheetml" in r.content_type
@@ -54,7 +54,7 @@ r=c.put(f"/api/appointments/{apid}",headers=H,json={"appointment_time":"11:30","
 r=c.put(f"/api/appointments/{apid}",headers=H,json={"appointment_time":"12:00","row_version":oldver});ok(r,409)
 r=c.get("/api/appointments?date=2026-09-28",headers=H);ok(r); arow=next(x for x in r.get_json() if x["id"]==apid); assert arow["appointment_time"]=="11:30"
 r=c.post(f"/api/appointments/{apid}/convert",headers=H);ok(r); converted=r.get_json()["patient_id"]
-r=c.get("/api/patients?date=2026-09-28",headers=H);ok(r); prow=next(x for x in r.get_json() if x["id"]==converted);assert prow["exam_price"]==800 and prow["coverage_percentage"]==25 and prow["coverage_amount"]==200 and prow["total_amount"]==600 and prow["remaining_amount"]==600 and prow["price_plan_id"]==planid
+r=c.get("/api/patients?date=2026-09-28",headers=H);ok(r); prow=next(x for x in r.get_json() if x["id"]==converted);assert prow["exam_price"]==800 and prow["coverage_percentage"]==25 and prow["coverage_amount"]==200 and prow["total_amount"]==600 and prow["remaining_amount"]==600 and prow["price_plan_id"]==planid; ps=json.loads(prow["price_snapshot"]);assert ps["plan_id"]==planid and ps["plan_version"]==1 and ps["price"]==800 and ps["source"]=="appointment_conversion"
 
 r=c.put(f"/api/price-plans/{planid}",headers=H,json={"version":2,"valid_to":"2026-12-31"});ok(r)
 r=c.put(f"/api/payment-types/{payid}",headers=H,json={"name":"TEST CONTRACT UPDATED","category":"Contract"});ok(r)

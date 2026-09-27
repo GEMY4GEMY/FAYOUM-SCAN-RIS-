@@ -68,3 +68,12 @@ r=c.put("/api/settings",headers=H,json={"restore_probe":"after"});ok(r)
 r=c.post("/api/backups/"+restore_name+"/restore",headers=H);ok(r);assert r.get_json().get("safety_backup")
 r=c.get("/api/settings",headers=H);ok(r);assert r.get_json().get("restore_probe")=="before"
 
+
+
+# REV.7 JSON migration: preserve patients/exams/payment types/settings and archive legacy user metadata.
+legacy={"paymentTypes":[{"name":"LEGACY CASH","category":"Cash","notes":"REV7"}],"exams":[{"unit":"MRI","name":"LEGACY MRI","price":777}],"patients":[{"id":7001,"name":"LEGACY PATIENT","paymentType":"LEGACY CASH","phone":"01070010000","exam":"LEGACY MRI","examPrice":777,"coveragePercentage":0,"coverageAmount":0,"additionalFees":10,"discount":7,"totalAmount":780,"doctor":"DR LEGACY","notes":"REV7 IMPORT","user":"legacyuser","unit":"MRI","date":"2025-01-17","timestamp":"2025-01-17T10:00:00"}],"settings":[{"key":"legacy_center","value":"Fayoum Scan REV7"}],"users":[{"username":"legacyuser","type":"admin","lastLogin":"2025-01-17"}],"backups":[{"id":1,"name":"legacy backup"}]}
+r=c.post("/api/migration/rev7",headers=H,json=legacy);ok(r);mj=r.get_json();assert mj["patients_inserted"]==1 and mj["settings_saved"]==1 and mj["legacy_users_archived"]==1 and mj["legacy_backups_received"]==1
+r=c.get("/api/patients?date=2025-01-17",headers=H);ok(r);lr=next(x for x in r.get_json() if x["legacy_id"]==7001);assert lr["name"]=="LEGACY PATIENT" and lr["exam_price"]==777 and lr["total_amount"]==780
+r=c.get("/api/settings",headers=H);ok(r);ls=r.get_json();assert ls["legacy_center"]=="Fayoum Scan REV7" and "legacyuser" in ls["legacy_rev7_users"]
+r=c.post("/api/migration/rev7",headers=H,json=legacy);ok(r);assert r.get_json()["patients_inserted"]==0
+print("REV.7 migration smoke tests passed")

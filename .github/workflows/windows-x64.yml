@@ -35,9 +35,16 @@ jobs:
           --add-data "web;web"
           --add-data "server/schema.sql;server"
           server/app.py
+      - name: Package Windows x64
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release
+          Copy-Item dist/FayoumScanRIS-Server.exe release/FayoumScanRIS.exe
+          Copy-Item START_SERVER.bat release/
+          Copy-Item BETA_README_AR.md release/README_AR.md
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: FayoumScanRIS-Windows-x64
-          path: dist/FayoumScanRIS-Server.exe
+          path: release/*
           if-no-files-found: error

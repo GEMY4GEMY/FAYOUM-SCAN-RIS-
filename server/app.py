@@ -92,9 +92,11 @@ def adduser():
   except sqlite3.IntegrityError:return jsonify(error="username exists"),409
 @app.get("/api/payment-types")
 def pays():
+ if not user():return jsonify(error="authentication required"),401
  with con() as c:return jsonify([dict(x) for x in c.execute("select * from payment_types where active=1 order by name")])
 @app.get("/api/exams")
 def exams():
+ if not user():return jsonify(error="authentication required"),401
  u=request.args.get("unit");q="select * from exams where active=1";a=[]
  if u:q+=" and unit=?";a=[u]
  with con() as c:return jsonify([dict(x) for x in c.execute(q+" order by unit,name",a)])
@@ -134,6 +136,7 @@ def editexam(i):
  return jsonify(ok=True)
 @app.get("/api/price-plans")
 def plans():
+ if not user():return jsonify(error="authentication required"),401
  with con() as c:return jsonify([dict(x) for x in c.execute("select p.*,t.name payment_type from price_plans p join payment_types t on t.id=p.payment_type_id order by p.id desc")])
 @app.post("/api/price-plans")
 def addplan():
@@ -151,6 +154,7 @@ def editplan(pid):
  return jsonify(ok=True)
 @app.get("/api/price-plans/<int:pid>/items")
 def planitems(pid):
+ if not user():return jsonify(error="authentication required"),401
  with con() as c:
   if not c.execute("select 1 from price_plans where id=?",(pid,)).fetchone():return jsonify(error="price plan not found"),404
   return jsonify([dict(x) for x in c.execute("select i.*,e.unit,e.name exam_name from price_plan_items i join exams e on e.id=i.exam_id where i.price_plan_id=? order by e.unit,e.name",(pid,))])
@@ -173,6 +177,7 @@ def pricing_for(c,pt,ex,unit,day):
 
 @app.get("/api/pricing/resolve")
 def resolve():
+ if not user():return jsonify(error="authentication required"),401
  pt=request.args.get("payment_type","");ex=request.args.get("exam","");unit=request.args.get("unit","");day=request.args.get("date") or datetime.now().date().isoformat()
  with con() as c:return jsonify(**pricing_for(c,pt,ex,unit,day))
 def normalize_finance(d,base=None):
@@ -187,6 +192,7 @@ def normalize_finance(d,base=None):
 
 @app.get("/api/patients")
 def patients():
+ if not user():return jsonify(error="authentication required"),401
  q="select * from patients where 1=1";a=[]
  for col,arg in [("case_date","date"),("unit","unit")]:
   v=request.args.get(arg)
@@ -196,7 +202,9 @@ def patients():
  with con() as c:return jsonify([dict(x) for x in c.execute(q+" order by id desc limit 3000",a)])
 @app.post("/api/patients")
 def patientadd():
- d=request.json or {};u=user();d["username"]=(u or {}).get("username")
+ u=user()
+ if not u:return jsonify(error="authentication required"),401
+ d=request.json or {};d["username"]=(u or {}).get("username")
  with con() as c:
   pr=pricing_for(c,d.get("payment_type",""),d.get("exam",""),d.get("unit",""),d.get("case_date") or datetime.now().date().isoformat())
  d["exam_price"]=pr["price"];d["coverage_percentage"]=pr["coverage_percentage"];d["price_plan_id"]=pr.get("plan_id");d["price_plan_item_id"]=pr.get("item_id");d=normalize_finance(d); cols=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","username","unit","case_date","timestamp","price_plan_id","price_plan_item_id","price_snapshot"]
@@ -246,6 +254,7 @@ def migrate():
  return jsonify(ok=True,**stats)
 @app.get("/api/patients/by-phone/<path:phone>")
 def patientphone(phone):
+ if not user():return jsonify(error="authentication required"),401
  with con() as c:
   rows=[dict(x) for x in c.execute("select id,name,phone,payment_type,unit,exam,doctor,case_date,total_amount,paid_amount,remaining_amount from patients where phone=? order by case_date desc,id desc limit 20",(phone,))]
  return jsonify(found=bool(rows),history=rows)
@@ -323,6 +332,7 @@ def exportpatients():
  return send_file(out,as_attachment=True,download_name="FayoumScan_Patients_"+(request.args.get("date") or "All")+".xlsx",mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 @app.get("/api/price-plans/<int:pid>/export.xlsx")
 def exportplan(pid):
+ if not admin():return jsonify(error="admin required"),403
  with con() as c:
   p=c.execute("select p.*,t.name payment_type from price_plans p join payment_types t on t.id=p.payment_type_id where p.id=?",(pid,)).fetchone()
   if not p:return jsonify(error="plan not found"),404
@@ -372,6 +382,7 @@ def setpermissions(role):
  return jsonify(ok=True)
 @app.get("/api/settings")
 def getsettings():
+ if not user():return jsonify(error="authentication required"),401
  with con() as c:return jsonify({x["key"]:x["value"] for x in c.execute("select key,value from settings")})
 @app.put("/api/settings")
 def putsettings():

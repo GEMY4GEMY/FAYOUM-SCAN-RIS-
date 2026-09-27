@@ -77,7 +77,7 @@ def lan_ip():
 @app.get("/api/health")
 def health():
  port=int(os.getenv("PORT","8787"));ip=lan_ip()
- with con() as c:return jsonify(ok=True,server="FAYOUM SCAN RIS",version="Main Release",patients=c.execute("select count(*) from patients").fetchone()[0],lan_ip=ip,lan_url=f"http://{ip}:{port}",local_url=f"http://127.0.0.1:{port}")
+ with con() as c:return jsonify(ok=True,server="FAYOUM SCAN RIS",version="Main Release",hostname=socket.gethostname(),port=port,patients=c.execute("select count(*) from patients").fetchone()[0],lan_ip=ip,lan_url=f"http://{ip}:{port}",local_url=f"http://127.0.0.1:{port}")
 @app.post("/api/login")
 def login():
  d=request.json or {}

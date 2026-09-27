@@ -214,16 +214,21 @@ def patientadd():
 @app.put("/api/patients/<int:i>")
 def patientedit(i):
  if not allowed("patient_edit"):return jsonify(error="permission denied"),403
- d=request.json or {};expected=int(d.get("row_version",1));u=user();editable_fields=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","unit","case_date"]
+ d=request.json or {};expected=int(d.get("row_version",1));u=user()
  with con() as c:
   old=c.execute("select * from patients where id=?",(i,)).fetchone()
   if not old:return jsonify(error="patient not found"),404
-  d=normalize_finance(d,dict(old))
-  vals=[d.get(k,old[k]) for k in editable_fields]+[((u or {}).get("username") or d.get("username")),i,expected]
-  cur=c.execute("update patients set "+",".join(k+"=?" for k in editable_fields)+",username=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
+  base=dict(old); final={**base,**d}
+  pr=pricing_for(c,final.get("payment_type",""),final.get("exam",""),final.get("unit",""),final.get("case_date") or datetime.now().date().isoformat())
+  final["exam_price"]=pr["price"];final["coverage_percentage"]=pr["coverage_percentage"];final["price_plan_id"]=pr.get("plan_id");final["price_plan_item_id"]=pr.get("item_id");final=normalize_finance(final,base)
+  final["price_snapshot"]=json.dumps({"price":final["exam_price"],"coverage_percentage":final["coverage_percentage"],"coverage_amount":final["coverage_amount"],"additional_fees":final["additional_fees"],"discount":final["discount"],"total_amount":final["total_amount"],"plan_id":final.get("price_plan_id"),"item_id":final.get("price_plan_item_id"),"plan_name":pr.get("plan_name"),"plan_version":pr.get("version"),"payment_type":final.get("payment_type"),"unit":final.get("unit"),"exam":final.get("exam"),"case_date":final.get("case_date"),"source":"patient_edit","captured_at":datetime.now().isoformat(timespec="seconds")},ensure_ascii=False)
+  fields=["name","payment_type","phone","exam","exam_price","coverage_percentage","coverage_amount","additional_fees","discount","total_amount","paid_amount","remaining_amount","payment_method","doctor","notes","unit","case_date","price_plan_id","price_plan_item_id","price_snapshot"]
+  vals=[final.get(k) for k in fields]+[(u or {}).get("username"),i,expected]
+  cur=c.execute("update patients set "+",".join(k+"=?" for k in fields)+",username=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP where id=? and row_version=?",vals)
   if not cur.rowcount:return jsonify(error="record changed by another user"),409
-  c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data,new_data) values(?,?,?,?,?,?)",((u or {}).get("username"),"UPDATE","patient",i,json.dumps(dict(old),ensure_ascii=False),json.dumps(d,ensure_ascii=False)))
+  c.execute("insert into audit_log(username,action,entity_type,entity_id,old_data,new_data) values(?,?,?,?,?,?)",((u or {}).get("username"),"UPDATE","patient",i,json.dumps(base,ensure_ascii=False),json.dumps(final,ensure_ascii=False)))
  return jsonify(ok=True)
+
 @app.delete("/api/patients/<int:i>")
 def patientdelete(i):
  a=admin()
@@ -301,10 +306,8 @@ def apptconvert(i):
   if not a:return jsonify(error="appointment not found"),404
   if a["converted_patient_id"]:return jsonify(error="already converted",patient_id=a["converted_patient_id"]),409
   pt=a["payment_type"] or ""; ex=a["exam"] or ""; day=a["appointment_date"]
-  pr=c.execute("select i.id item_id,p.id plan_id,p.name plan_name,p.version,i.price,i.coverage_percentage from price_plan_items i join price_plans p on p.id=i.price_plan_id join payment_types t on t.id=p.payment_type_id join exams e on e.id=i.exam_id where t.name=? and e.name=? and p.active=1 and i.active=1 and p.valid_from<=? and (p.valid_to is null or p.valid_to='' or p.valid_to>=?) order by p.version desc,p.id desc limit 1",(pt,ex,day,day)).fetchone()
-  if pr: price=float(pr["price"] or 0);cov=float(pr["coverage_percentage"] or 0);plan_id=pr["plan_id"];item_id=pr["item_id"];plan_name=pr["plan_name"];plan_version=pr["version"]
-  else:
-   er=c.execute("select id,base_price from exams where name=? and unit=? and active=1 order by id desc limit 1",(ex,a["unit"])).fetchone();price=float(er["base_price"] or 0) if er else 0;cov=0;plan_id=None;item_id=None;plan_name=None;plan_version=None
+  pr=pricing_for(c,pt,ex,a["unit"],day)
+  price=float(pr.get("price") or 0);cov=float(pr.get("coverage_percentage") or 0);plan_id=pr.get("plan_id");item_id=pr.get("item_id");plan_name=pr.get("plan_name");plan_version=pr.get("version")
   covamt=price*cov/100;total=max(0,price-covamt)
   snap=json.dumps({"price":price,"coverage_percentage":cov,"coverage_amount":covamt,"additional_fees":0,"discount":0,"total_amount":total,"plan_id":plan_id,"item_id":item_id,"plan_name":plan_name,"plan_version":plan_version,"payment_type":pt,"exam":ex,"source":"appointment_conversion","captured_at":datetime.now().isoformat()},ensure_ascii=False)
   r=c.execute("insert into patients(name,payment_type,phone,exam,exam_price,coverage_percentage,coverage_amount,additional_fees,discount,total_amount,paid_amount,remaining_amount,payment_method,doctor,notes,username,unit,case_date,timestamp,price_plan_id,price_plan_item_id,price_snapshot) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(a["patient_name"],pt,a["phone"],ex,price,cov,covamt,0,0,total,0,total,"Contract" if pt else "Cash",a["doctor"] or "",a["notes"] or "",(u or {}).get("username"),a["unit"],day,datetime.now().isoformat(),plan_id,item_id,snap))

@@ -49,6 +49,25 @@ def init():
   if not c.execute("select count(*) from users").fetchone()[0]:
    c.execute("insert into users(username,password_hash,role,must_change_password) values(?,?,?,1)",("admin",hp("admin123"),"admin"))
 
+def create_backup(prefix="manual"):
+ if not os.path.isfile(DB):return None
+ os.makedirs(BACKUPS,exist_ok=True)
+ name=prefix+"_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".db";dest=os.path.join(BACKUPS,name)
+ with con() as source:
+  out=sqlite3.connect(dest);source.backup(out);out.close()
+ return name
+
+def startup_backup(retain=30):
+ try:
+  name=create_backup("startup")
+  files=sorted([x for x in os.listdir(BACKUPS) if x.startswith("startup_") and x.endswith(".db")],reverse=True)
+  for old in files[max(1,int(retain)):]:
+   try:os.remove(os.path.join(BACKUPS,old))
+   except OSError:pass
+  return name
+ except Exception as e:
+  print("Startup backup warning:",e);return None
+
 def lan_ip():
  try:
   sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);sock.connect(("8.8.8.8",80));ip=sock.getsockname()[0];sock.close();return ip
@@ -447,8 +466,8 @@ def audit():
 @app.post("/api/backup")
 def backup():
  if not admin():return jsonify(error="admin required"),403
- f="fayoum_scan_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".db";dest=os.path.join(BACKUPS,f)
- with con() as s:d=sqlite3.connect(dest);s.backup(d);d.close()
+ f=create_backup("fayoum_scan")
+ if not f:return jsonify(error="database not initialized"),422
  return jsonify(ok=True,file=f)
 @app.get("/api/backups")
 def backups():
@@ -461,6 +480,7 @@ def staticfiles(p):return send_from_directory(WEB,p)
 
 if __name__=="__main__":
  init()
+ startup_backup()
  try:
   from waitress import serve;serve(app,host="0.0.0.0",port=int(os.getenv("PORT","8787")),threads=8)
  except ImportError:app.run(host="0.0.0.0",port=8787,threaded=True)

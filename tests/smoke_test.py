@@ -9,6 +9,13 @@ def ok(r,code=None):
  else: assert r.status_code==code,(r.status_code,r.get_data(as_text=True))
 r=c.get("/api/health");ok(r)
 r=c.get("/api/patients");ok(r,401)
+r=c.get("/api/payment-types");ok(r,401)
+r=c.get("/api/exams");ok(r,401)
+r=c.get("/api/price-plans");ok(r,401)
+r=c.get("/api/settings");ok(r,401)
+r=c.get("/api/pricing/resolve?payment_type=Cash&exam=X");ok(r,401)
+r=c.get("/api/patients/by-phone/01000000000");ok(r,401)
+
 r=c.get("/api/export/patients.xlsx");ok(r,401)
 r=c.post("/api/login",json={"username":"admin","password":"admin123"});ok(r)
 j=r.get_json();assert j.get("token")

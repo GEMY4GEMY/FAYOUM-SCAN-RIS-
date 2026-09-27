@@ -17,6 +17,16 @@ jobs:
         run: pip install -r requirements.txt
       - name: Syntax check
         run: python -m py_compile server/app.py
+      - name: Smoke tests
+        run: python tests/smoke_test.py
+      - name: JavaScript syntax check
+        shell: pwsh
+        run: |
+          $html = Get-Content web/index.html -Raw
+          $m = [regex]::Match($html, '<script>([\s\S]*?)</script>')
+          if (-not $m.Success) { throw 'Inline JavaScript block not found' }
+          Set-Content -Path web/app-check.js -Value $m.Groups[1].Value -Encoding UTF8
+          node --check web/app-check.js
       - name: Build portable server
         shell: cmd
         run: >
